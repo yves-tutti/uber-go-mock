@@ -19,8 +19,8 @@ package main
 // TODO: This does not support embedding package-local interfaces in a separate file.
 
 import (
+	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -823,25 +823,24 @@ func (g *generator) Output() []byte {
 // createPackageMap returns a map of import path to package name
 // for specified importPaths.
 func createPackageMap(importPaths []string) map[string]string {
-	var pkg struct {
-		Name       string
-		ImportPath string
-	}
 	pkgMap := make(map[string]string)
 	b := bytes.NewBuffer(nil)
-	args := []string{"list", "-json"}
+	// use go list with format-string as it executes faster than
+	// json format and, we are only interested in .Name and .ImportPath.
+	args := []string{"list", "-f", "{{.ImportPath}} {{.Name}}"}
 	args = append(args, importPaths...)
 	cmd := exec.Command("go", args...)
 	cmd.Stdout = b
-	cmd.Run()
-	dec := json.NewDecoder(b)
-	for dec.More() {
-		err := dec.Decode(&pkg)
-		if err != nil {
-			log.Printf("failed to decode 'go list' output: %v", err)
+	_ = cmd.Run()
+	s := bufio.NewScanner(b)
+	for s.Scan() {
+		line := s.Text()
+		kv := strings.Split(line, " ")
+		if len(kv) != 2 {
+			log.Printf("failed to decode 'go list' output: %v", line)
 			continue
 		}
-		pkgMap[pkg.ImportPath] = pkg.Name
+		pkgMap[kv[0]] = kv[1]
 	}
 	return pkgMap
 }
